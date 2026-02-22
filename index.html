@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POS Config Generator v7</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+   <style>
+        :root {
+            --ebl-blue: #003366; /* EBL Corporate Navy Blue */
+            --ebl-red: #E31E24;  /* EBL Corporate Red */
+            --bg-light: #f8fafc;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #001f3f 0%, #003366 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+        }
+
+        .card {
+            background: #ffffff;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 480px;
+            text-align: center;
+            border-top: 6px solid var(--ebl-red); /* Red accent on top */
+        }
+
+        h2 {
+            margin-top: 2px;
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 30px;
+            color: var(--ebl-blue);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 25px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .info-box {
+            background: #f1f5f9;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 12.5px;
+            text-align: left;
+            margin-bottom: 25px;
+            border-left: 4px solid var(--ebl-blue);
+            color: #334155;
+        }
+
+        .info-box strong {
+            color: var(--ebl-blue);
+        }
+
+        .file-upload-wrapper {
+            margin-bottom: 20px;
+        }
+input[type="file"] { width: 100%; padding: 10px; margin: 20px 0; border: 2px dashed #3498db; border-radius: 8px; cursor: pointer; }
+       
+
+        button {
+            width: 100%;
+            padding: 16px;
+            background: var(--ebl-blue);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+        }
+
+        button:hover {
+            background: #002244;
+            box-shadow: 0 5px 15px rgba(0,51,102,0.4);
+        }
+
+        #status {
+            margin-top: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 12px;
+            border-radius: 6px;
+            display: none;
+        }
+
+        .status-active {
+            display: block !important;
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+
+        .footer {
+            margin-top: 30px;
+            font-size: 11px;
+            color: #94a3b8;
+            border-top: 1px solid #eee;
+            padding-top: 15px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <img src="https://www.ebl.com.bd/images/ebl_logo.gif" alt="">
+    <h2>EBL POS CONFIGURATION </h2>
+    <div class="info">
+        <p style="font-size: 14px; color: #666;"><b>★</b>Excel column headers: 
+             <b>TID,</b>
+             <b>MID,</b>
+             <b>SID,</b>
+             <b>MCC,</b>
+             <b>DBA NAME,</b>
+             <b>ADDRESS</b>
+        
+        
+        </p>
+       
+        • <b >Address Splitting:</b> 28 character kore split hobe.<br>
+        • <b>Merchant Name:</b> 21 char word-wise split.
+    </div>
+    <input type="file" id="excelFile" accept=".xlsx, .xls" />
+    <button onclick="generateConfigs()">Download Profile ZIP File</button>
+    <div id="status"></div>
+</div>
+
+<script>
+// Function to clean special characters from the end of a string
+function cleanEnd(text) {
+    if (!text) return "";
+    // Remove coma, hyphen, or space from the end of the line
+    return text.trim().replace(/[,/]+$/, "").trim();
+}
+
+// Smart Word Splitter with cleaning logic
+function multiSplit(text, limits) {
+    let result = [];
+    let remaining = text ? text.toString().trim() : "";
+
+    for (let limit of limits) {
+        if (remaining.length <= limit) {
+            result.push(cleanEnd(remaining));
+            remaining = "";
+        } else {
+            let lastSpace = remaining.lastIndexOf(" ", limit);
+            if (lastSpace === -1) lastSpace = limit;
+            
+            let part = remaining.substring(0, lastSpace).trim();
+            result.push(cleanEnd(part));
+            remaining = remaining.substring(lastSpace).trim();
+        }
+    }
+    return result;
+}
+
+function generateConfigs() {
+    const fileInput = document.getElementById('excelFile');
+    const status = document.getElementById('status');
+
+    if (!fileInput.files[0]) {
+        alert("Please select an Excel file!");
+        return;
+    }
+
+    status.innerText = "Cleaning & Processing...";
+    const reader = new FileReader();
+
+    reader.onload = function(e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet);
+
+        const zip = new JSZip();
+
+        rows.forEach(row => {
+            const getVal = (keyName) => {
+                const foundKey = Object.keys(row).find(k => k.toLowerCase().trim() === keyName.toLowerCase());
+                return row[foundKey] ? row[foundKey].toString().trim() : "";
+            };
+
+            const tid = getVal('TID') || "00000000";
+            const mid = getVal('MID') || "00000000";
+            const sid = getVal('OUTLET ID') || "00000000"; 
+            const mccid = getVal('MCC') || "0000";
+            
+            // Name Split (21, 28)
+            const nameParts = multiSplit(getVal('DBA NAME'), [21, 999]);
+            const mName1 = nameParts[0] || "";
+            const mName2 = nameParts[1] || "";
+
+            // Address Split (28 x 5 lines) + Clean Coma
+            const addrParts = multiSplit(getVal('Address') || getVal('Updated Address') || getVal('Old Address'), [28, 28, 28, 28, 999]);
+            
+            const content = `HDT:TID=${tid}:MID=${mid}:SID=${sid}:MCCID=${mccid}:1:1:1:0001:050:050:TK:115:90:100
+TCT:ADDR1(36)=${addrParts[0] || ""}:ADDR2(36)=${addrParts[1] || ""}:ADDR3(36)=${addrParts[2] || ""}:ADDR4(36)=${addrParts[3] || ""}:ADDR5(36)=${addrParts[4] || ""}:MERCHANTNAME1(24)=${mName1}:MERCHANTNAME2(28)=${mName2}:6925:1234:1234:1234:1234:69253255
+SUPPORTBIN:OFFICERNAME=XX:OFFICERMOBILE=00000:OFFICERNAME2=YY:OFFICERMOBILE2=00000:EMAIL=test.ebl@ebl.com
+SIMBIN:BANGLALINK=0:GRAMEENPHONE=0:ROBI=1:OTHERS=0
+IPBIN:IP1=192.168.221.70,IP2=192.168.221.70:IP1=192.168.242.3,IP2=192.168.242.3:IP1=10.210.1.58,IP2=10.210.1.58:IP1=172.31.1.43,IP2=172.31.1.43:PORT1=8002,PORT2=8002:PORT1=8002,PORT2=8002:PORT1=8002,PORT2=8002:PORT1=5300,PORT2=5350
+TXN:SALE=1:VOID=1:QRSALE=0:CASH=0:ZIP=0:WANT2BUY=0:PREAUTH=0:TIPADJUST=0:TIPADJUSTOFF=0:TIPADJUSTON=0:TIPWITHSALE=0:SETTLEMENT=1:BALANCE=0:REFUND=0:SHOWTXN=0:LOGON=1:SALECOMP=0:SALECOMPOFF=0:SALECOMPON=0:CANCELLATION=0:OFFLINE=0:REPORT=1
+MRT:LOGON:VOID:SETTLEMENT:REPORT:ZIPSALE:PREAUTH:TIPADJUST:REPRINT:SUPPORT:APPINFO:SHOWTXN:ADMIN:CASHADVANCE:LOUNGECHECK:BALANCE:CANCELLATION:REFUND
+PMTTYP:CHIP=1:NFC=1:CASHNFC=1:MAG=1:SALEMANUAL=0:EMIMANUAL=0:CASHMANUAL=0:PREAUTHMANUAL=0:FALLBACK=0:LAST4DIGIT=0:CVV2INPUT=0
+LIMIT:999:999:100:99999999:50000:5000000:50000:3,6,9,12,18,24
+CARDEMICHARGEBIN:3,3:6,4:9,6.5:12,8:18,10.5:24,13:36,18
+SLIPPRINT:CUSTOMERCOPY=1:LOGON=1:CARDDETAILSREPORT=0:SETTLEDETAILSREPORT=0:ERRORTXN=1
+EXPMASKING:EXPMASKMC=0:EXPMASKCC=0:EXPMASKDT=0:EXPMASKPREAUTH=0:EXPMASKDISP=0:EXPMASKSHOWTXN=0:EXPMASKEMI=0:EXPMASKERRRP=0
+PANMASKING:PANMASKMC=1:PANMASKCC=0:PANMASKDT=1:PANMASKPREAUTH=1:PANMASKDISP=1:PANMASKSHOWTXN=1:PANMASKEMI=1:PANMASKERRRP=1
+EMIBIN:4349780000000000,4349789999999999,16:4238580000000000,4238589999999999,16:4349800000000000,4349809999999999,16:4237170000000000,4237170099999999,16:4134010000000000,4134019999999999,16:4679220000000000,4679229999999999,16:4093630000000000,4093630099999999,16:4378480000000000,4378489999999999,16:4238000000000000,4238009999999999,16:4840710000000000,4840719999999999,16:5376830000000000,5376839999999999,16:5329510400000000,5329510499999999,16:5595810000000000,5595819999999999,16:5329516800000000,5329516899999999,16:36090100000000,36090199999999,14:36090200000000,36090299999999,14:36111900000000,36111999999999,14:6262960600000000,6262960699999999,16
+CASHBIN:5483210000000000,5483219999999999,16:4391310000000000,4391319999999999,16:4391320000000000,4391329999999999,16:4391330000000000,4391339999999999,16:4391340000000000,4391349999999999,16:4365260000000000,4365269999999999,16:5213920000000000,5213929999999999,16:5300030000000000,5300039999999999,16:4084090000000000,4084099999999999,16:4375940000000000,4375949999999999,16
+BINWISELIMIT:5000:5000000:5483210000000000,5483219999999999,16:4391310000000000,4391319999999999,16
+CDT0:433435000000:433435999999:12,13,14,15,16,17,18,19:VISA:11111111111
+CDT1:439132000000:439132999999:12,13,14,15,16,17,18,19:VISA:11111111111
+CDT2:439133000000:439133999999:12,13,14,15,16,17,18,19:VISA:11111111111
+CDT3:439134000000:439134999999:12,13,14,15,16,17,18,19:VISA:11111111111
+CDT4:436526000000:436526999999:12,13,14,15,16,17,18,19:VISA:11111111111
+CDT5:462870000000:462870999999:12,13,14,15,16,17,18,19:VISA:11111111111
+CDT6:400000000000:499999999999:12,13,14,15,16,17,18,19:VISA:11111111111
+CDT7:548321000000:548321999999:12,13,14,15,16,17,18,19:MASTERCARD:11111111111
+CDT8:530003000000:530003999999:12,13,14,15,16,17,18,19:MASTERCARD:11111111111
+CDT9:521392000000:521392999999:12,13,14,15,16,17,18,19:MASTERCARD:11111111111
+CDT10:526238000000:526238999999:12,13,14,15,16,17,18,19:MASTERCARD:11111111111
+CDT11:500000000000:599999999999:12,13,14,15,16,17,18,19:MASTERCARD:11111111111
+CDT12:222100000000:272099999999:12,13,14,15,16,17,18,19:MASTERCARD:11111111111
+CDT13:100000000000:199999999999:12,13,14,15,16,17,18,19:NPSB:11111111111
+CDT14:600000000000:699999999999:12,13,14,15,16,17,18,19:UPI:11111111111
+CDT15:800000000000:899999999999:12,13,14,15,16,17,18,19:UPI:11111111111
+CDT16:639996000000:639996809999:12,13,14,15,16,17,18,19:TAKAPAY:11111111111
+CDT17:639996040000:639996069999:12,13,14,15,16,17,18,19:EBL TAKAPAY:11111111111
+CDT18:300000000000:399999999999:12,13,14,15,16,17,18,19:DCI:11111111111
+CDT19:900000000000:999999999999:12,13,14,15,16,17,18,19:NPSB:11111111111
+EDT0:A0000000031010:VSDC:0010000000:D84004F800:D84000A800:000000:500000:99999999
+EDT1:A0000000032010:VISA ELECT:0010000000:D84004F800:D84000A800:000000:500000:99999999
+EDT2:A0000000033010:VISA INTERLINK:0010000000:D84004F800:D84000A800:000000:500000:99999999
+EDT3:A0000000041010:MASTERCARD:0000000000:F45084800C:F45084800C:000000:500000:99999999
+EDT4:A0000000043060:MAESTRO:0000800000:F45084800C:F45084800C:000000:500000:99999999
+EDT5:A00000033301:UPI:0000000000:D800FC9800:084000A800:000000:500000:99999999
+EDT6:A0000001523010:DIPASS:0010000000:D84004F800:D84000A800:000000:500000:99999999
+EDT7:A00000091010:TAKAPAY:0000000000:F45084800C:F45084800C:000000:500000:99999999`;
+
+            zip.file(`${tid}.txt`, content);
+        });
+
+        zip.generateAsync({ type: "blob" }).then(function(content) {
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(content);
+            link.download = `POS_Configs_${new Date().toISOString().slice(0,10)}.zip`;
+            link.click();
+            status.innerText = "Done! Cleaned and Zipped.";
+        });
+    };
+
+    reader.readAsArrayBuffer(fileInput.files[0]);
+}
+</script>
+
+</body>
+</html>
